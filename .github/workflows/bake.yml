@@ -42,17 +42,17 @@ jobs:
       - if: steps.rel.outputs.build == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         with:
-          path: data/out/parts
-          key: parts-${{ steps.rel.outputs.release }}-${{ github.run_id }}
-          restore-keys: parts-${{ steps.rel.outputs.release }}-
+          path: data/out/parts-v2
+          key: parts-v2-${{ steps.rel.outputs.release }}-${{ github.run_id }}
+          restore-keys: parts-v2-${{ steps.rel.outputs.release }}-
       - if: steps.rel.outputs.build == 'true'
         name: extract
         run: python skylines.py extract --workers 8
       - if: always() && steps.rel.outputs.build == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         with:
-          path: data/out/parts
-          key: parts-${{ steps.rel.outputs.release }}-${{ github.run_id }}
+          path: data/out/parts-v2
+          key: parts-v2-${{ steps.rel.outputs.release }}-${{ github.run_id }}
       - if: steps.rel.outputs.build == 'true'
         name: build and check
         run: python skylines.py build && python skylines.py check

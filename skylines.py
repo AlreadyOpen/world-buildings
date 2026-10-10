@@ -7,7 +7,7 @@ Official building sources win inside their country; Overture fills the rest. Usa
     python skylines.py latest                                             # prints the newest Overture release name
 SKY_DATA moves the data folder (default ./data next to this file).
 """
-import argparse, concurrent.futures as cf, hashlib, json, os, subprocess, sys, time, urllib.request
+import argparse, concurrent.futures as cf, hashlib, json, os, subprocess, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 
 import duckdb
@@ -16,13 +16,24 @@ DATA = Path(os.environ.get('SKY_DATA', Path(__file__).resolve().parent / 'data')
 CACHE, OUT = DATA / 'cache', DATA / 'out'
 STAC = 'https://stac.overturemaps.org/catalog.json'
 GISCO = 'https://gisco-services.ec.europa.eu/distribution/v2/countries/geojson/CNTR_RG_01M_2020_4326.geojson'
-COLS = 'id VARCHAR, height DOUBLE, min_height DOUBLE, name VARCHAR, source VARCHAR, geometry GEOMETRY'
+COLS = 'id VARCHAR, height DOUBLE, min_height DOUBLE, name VARCHAR, source VARCHAR, num_floors INTEGER, geometry GEOMETRY'
+PARTS = OUT / 'parts-v2'  # bump when the extract's columns change (the CI cache is keyed on this name too)
+WIKIDATA = 'https://query.wikidata.org/sparql'
+# Buildings and towers with a height and coordinates, for checking supertall heights. Classes listed (no subclass walk):
+# skyscraper, high-rise, building, tower, office building, hotel, TV tower, observation tower, church building, cathedral,
+# chimney, mosque, residential skyscraper, ..., bell tower. The full "anything with a height" query times out.
+WD_QUERY = '''SELECT DISTINCT ?item ?h ?coord WHERE { VALUES ?c { wd:Q11303 wd:Q18142 wd:Q41176 wd:Q12518 wd:Q1021645
+  wd:Q27686 wd:Q11166728 wd:Q1440476 wd:Q16970 wd:Q2977 wd:Q2962545 wd:Q32815 wd:Q13402009 wd:Q1307276 wd:Q15848826
+  wd:Q2088357 } ?item wdt:P31 ?c ; p:P2048/psv:P2048/wikibase:quantityNormalized ?n ; wdt:P625 ?coord .
+  ?n wikibase:quantityAmount ?h ; wikibase:quantityUnit wd:Q11573 . FILTER(?h >= 100 && ?h < 1000) }'''
+SUPERTALL, MAX_STOREY = 300, 8  # metres: >= SUPERTALL needs Wikidata or a 2.5-6 m storey; height/num_floors > MAX_STOREY is a bad height
 
 # Official building sources, by GISCO country id. They replace Overture inside that country.
 # One without a parquet URL yet is skipped, and Overture stays there until it is published.
 OFFICIAL = {
-    'HK': {'title': 'Lands Department buildings, via AlreadyOpen hk-buildings', 'parquet': None,
-           'select': "BuildingCSUID, height_m, 0, BuildingNameEN, 'landsd', geometry",
+    'HK': {'title': 'Lands Department buildings, via AlreadyOpen hk-buildings',
+           'parquet': 'https://huggingface.co/datasets/alreadyopen/hk-buildings/resolve/main/buildings.parquet',
+           'select': "BuildingCSUID, height_m, 0, BuildingNameEN, 'landsd', Storeys, geometry",
            'licence': 'CSDI Terms of Use https://portal.csdi.gov.hk/csdi-webpage/doc/TNC',
            'attribution': 'Government of the HKSAR, CSDI Portal; Lands Department'},
 }
@@ -68,12 +79,12 @@ def coverage():
 
 
 def extract_one(fid, url, min_h):
-    out = OUT / 'parts' / f'{fid}.parquet'
+    out = PARTS / f'{fid}.parquet'
     if out.exists():
         return fid, 'kept'
     tmp = out.with_suffix('.part')
     db().execute(f"""COPY (SELECT id, height, coalesce(min_height, 0) AS min_height, names.primary AS name,
-                                  'overture' AS source, geometry
+                                  'overture' AS source, num_floors, geometry
                            FROM read_parquet('{url}') WHERE height >= {min_h})
                      TO '{tmp}' (FORMAT parquet, COMPRESSION zstd)""")
     tmp.rename(out)  # only finished files count, so a failed run resumes where it stopped
@@ -81,7 +92,7 @@ def extract_one(fid, url, min_h):
 
 
 def extract(a):
-    CACHE.mkdir(parents=True, exist_ok=True); (OUT / 'parts').mkdir(parents=True, exist_ok=True)
+    CACHE.mkdir(parents=True, exist_ok=True); PARTS.mkdir(parents=True, exist_ok=True)
     rel, files = release()
     if a.files:
         files = [f for f in files if f[0] in a.files.split(',')]
@@ -100,6 +111,36 @@ def sha256(p):
     return h.hexdigest()
 
 
+def wikidata():
+    p = CACHE / 'wikidata-tall.csv'
+    if not p.exists():
+        req = urllib.request.Request(WIKIDATA + '?' + urllib.parse.urlencode({'query': WD_QUERY}),
+                                     headers={'Accept': 'text/csv', 'User-Agent': 'AlreadyOpen-world-skylines (https://github.com/AlreadyOpen/world-skylines)'})
+        body = urllib.request.urlopen(req, timeout=120).read().decode()
+        # A WDQS timeout still answers 200: partial rows, then a Java stack trace. Refuse it.
+        if 'Exception' in body or body.count('\n') < 1000:
+            sys.exit(f'Wikidata answer looks truncated ({body.count(chr(10))} lines)')
+        p.write_text(body)
+    return p
+
+
+def reject(con):
+    """Move implausible Overture heights from table b to out/rejected.parquet, with the reason."""
+    con.execute(f"CREATE OR REPLACE TABLE w AS SELECT DISTINCT h, ST_GeomFromText(coord) p FROM read_csv('{wikidata()}')")
+    # Suspect: a storey over MAX_STOREY m, or SUPERTALL+ without a plausible 2.5-6 m storey (Wikidata misses many real
+    # supertalls, e.g. Central Park Tower). A matching Wikidata height clears either (the floor count may be the wrong field).
+    con.execute(f"""CREATE OR REPLACE TABLE r AS
+        SELECT b.id, CASE WHEN b.height / nullif(b.num_floors, 0) > {MAX_STOREY} THEN 'floors' ELSE 'wikidata' END AS reason
+        FROM b WHERE (coalesce(b.height / nullif(b.num_floors, 0) > {MAX_STOREY}, false)
+                      OR (b.height >= {SUPERTALL} AND NOT coalesce(b.height / nullif(b.num_floors, 0) BETWEEN 2.5 AND 6, false)))
+          AND NOT EXISTS (SELECT 1 FROM w WHERE abs(ST_Y(w.p) - ST_Y(ST_Centroid(b.geometry))) < 0.003
+                            AND abs(ST_X(w.p) - ST_X(ST_Centroid(b.geometry))) < 0.004
+                            AND ST_Distance_Sphere(w.p, ST_Centroid(b.geometry)) < 300 AND abs(b.height - w.h) / w.h <= 0.15)""")
+    con.execute(f"COPY (SELECT b.*, r.reason FROM b JOIN r USING (id) ORDER BY height DESC) TO '{OUT}/rejected.parquet' (FORMAT parquet, COMPRESSION zstd)")
+    con.execute('DELETE FROM b WHERE id IN (SELECT id FROM r)')
+    return dict(con.execute('SELECT reason, count(*) FROM r GROUP BY 1').fetchall())
+
+
 def build(a):
     """One Parquet + one PMTiles per source, never merged: Overture is ODbL (share-alike) and official sources keep their own terms."""
     meta = json.loads((OUT / 'release.json').read_text())
@@ -107,13 +148,16 @@ def build(a):
     # Parts hold all of Overture; official countries are cut here, so cached parts stay valid when sources change.
     cover = coverage()
     skip = f"WHERE NOT ST_Intersects(ST_Centroid(geometry), ST_GeomFromText('{cover}'))" if cover else ''
-    groups = {'overture': f"SELECT * FROM read_parquet('{OUT}/parts/*.parquet') {skip}"}
+    groups = {'overture': f"SELECT * FROM read_parquet('{PARTS}/*.parquet') {skip}"}
     for cc, s in OFFICIAL.items():
         if s['parquet']:
             groups[cc.lower()] = f"SELECT {s['select']} FROM read_parquet('{s['parquet']}') WHERE height_m >= {meta['min_height']}"
     outputs, rows = {}, {}
     for name, q in groups.items():
         con.execute(f'CREATE OR REPLACE TABLE b ({COLS})'); con.execute(f'INSERT INTO b {q}')
+        if name == 'overture':  # official sources are taken as published; Overture's heights are checked
+            rows['rejected'] = reject(con)
+            outputs['rejected.parquet'] = {'bytes': (OUT / 'rejected.parquet').stat().st_size, 'sha256': sha256(OUT / 'rejected.parquet')}
         table, pm, seq = OUT / f'{name}.parquet', OUT / f'{name}.pmtiles', CACHE / f'{name}.geojsonl'
         con.execute(f"COPY (SELECT * FROM b ORDER BY height DESC) TO '{table}' (FORMAT parquet, COMPRESSION zstd)")
         con.execute(f"COPY (SELECT height, min_height, name, geometry FROM b) TO '{seq}' WITH (FORMAT gdal, DRIVER 'GeoJSONSeq')")

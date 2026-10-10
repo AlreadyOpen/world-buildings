@@ -31,6 +31,13 @@ python publish.py                        # -> Hugging Face (needs HF_TOKEN)
 The GitHub Action `.github/workflows/bake.yml` checks weekly and rebuilds when Overture publishes a new release. Overture
 deletes each release about 60 days after publishing it, so the release is always looked up in its STAC catalogue, never fixed.
 
+## Height checks (Overture only)
+
+OpenStreetMap heights include errors (an 800 m chapel, an 816 m villa). A building is moved to `rejected.parquet`, with its
+reason, when its height divided by its floor count is over 8 m (`floors`), or when it is 300 m or taller without a plausible
+2.5-6 m storey (`wikidata`), unless a Wikidata building or tower within 300 m has a height within 15 % of it. Official
+sources are taken as published. Rejected buildings stay listed so they can be fixed upstream.
+
 ## Sources and terms
 
 - Overture Maps Foundation, buildings theme, [ODbL-1.0](https://opendatacommons.org/licenses/odbl/1-0/) (includes OpenStreetMap
