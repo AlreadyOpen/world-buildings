@@ -1,0 +1,70 @@
+# Weekly: when Overture has a new release, rebuild the world skylines and publish them to Hugging Face (publish.py).
+# Every run commits status/last-check.json: GitHub turns schedules off after 60 days with no commits.
+name: bake
+on:
+  schedule:
+    - cron: '0 20 * * 1'           # Mondays 20:00 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if this Overture release is already published
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: bake
+  cancel-in-progress: false
+jobs:
+  bake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      SKY_DATA: ${{ github.workspace }}/data
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97   # v7.0.0
+        with:
+          python-version: '3.14'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: new Overture release?
+        id: rel
+        run: |
+          latest=$(python skylines.py latest)
+          done=$(python -c "import json; print(json.load(open('status/last-run.json'))['release'])" 2>/dev/null || true)
+          echo "release=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" != "$done" ] || [ "${{ inputs.force }}" = "true" ]; then echo "build=true" >> "$GITHUB_OUTPUT"; fi
+          mkdir -p status && printf '{"checked": "%s", "latest": "%s", "published": "%s"}\n' "$(date -u +%FT%TZ)" "$latest" "$done" > status/last-check.json
+      - if: steps.rel.outputs.build == 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q tippecanoe
+      # finished per-file extracts survive a failed or timed-out run, so the next run resumes (keyed by release)
+      - if: steps.rel.outputs.build == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: data/out/parts
+          key: parts-${{ steps.rel.outputs.release }}-${{ github.run_id }}
+          restore-keys: parts-${{ steps.rel.outputs.release }}-
+      - if: steps.rel.outputs.build == 'true'
+        name: extract
+        run: python skylines.py extract --workers 8
+      - if: always() && steps.rel.outputs.build == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: data/out/parts
+          key: parts-${{ steps.rel.outputs.release }}-${{ github.run_id }}
+      - if: steps.rel.outputs.build == 'true'
+        name: build and check
+        run: python skylines.py build && python skylines.py check
+      - if: steps.rel.outputs.build == 'true'
+        name: publish
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python publish.py | tee status/last-run.json
+      - name: keep-alive commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add status/
+          git commit -m "check $(date -u +%F)" || exit 0
+          git pull --rebase -q && git push   # main may have moved during the run

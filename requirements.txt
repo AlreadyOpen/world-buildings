@@ -1,0 +1,2 @@
+duckdb==1.4.5
+huggingface_hub==1.12.0
