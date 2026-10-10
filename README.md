@@ -34,13 +34,13 @@ deletes each release about 60 days after publishing it, so the release is always
 ## Height checks (Overture only)
 
 OpenStreetMap heights include errors (an 800 m chapel, an 816 m villa). A building is moved to `rejected.parquet`, with its
-reason, when its height divided by its floor count is over 8 m (`floors`), or when it is 300 m or taller without a plausible
-2.5-6 m storey (`wikidata`), unless a Wikidata building or tower within 300 m has a height within 15 % of it. Official
+reason, when its height divided by its floor count (top minus base, since a building part's floors cover only its own tier) is over 12 m (`floors`), or when
+a whole building is 300 m or taller without a plausible 2.5-6 m storey (`wikidata`), unless a Wikidata building or tower within 300 m has a height within 15 % of it. Official
 sources are taken as published. Rejected buildings stay listed so they can be fixed upstream.
 
 ## Sources and terms
 
-- Overture Maps Foundation, buildings theme, [ODbL-1.0](https://opendatacommons.org/licenses/odbl/1-0/) (includes OpenStreetMap
+- Overture Maps Foundation, buildings theme (buildings and building parts: towers such as Burj Khalifa carry their height only on their parts), [ODbL-1.0](https://opendatacommons.org/licenses/odbl/1-0/) (includes OpenStreetMap
   data). Attribution: Overture Maps Foundation; © OpenStreetMap contributors. The `overture.*` outputs are a derived database
   and are therefore also ODbL-1.0.
 - Official sources keep their own terms and are published as separate files, never merged into the ODbL files:

@@ -1,7 +1,7 @@
 """World skylines: tall buildings with heights for the zooms where Overture's own tiles carry none (z6-13).
 
 Official building sources win inside their country; Overture fills the rest. Usage:
-    python skylines.py extract [--min-height 30] [--files 00058,00377]   # out/parts/<file>.parquet, resumable
+    python skylines.py extract [--min-height 30] [--files 00058,00377]   # out/parts-v2/<file>.parquet, resumable
     python skylines.py build                                              # out/<source>.parquet + <source>.pmtiles + sources.json
     python skylines.py check                                              # fails if Overture is left inside official coverage
     python skylines.py latest                                             # prints the newest Overture release name
@@ -27,7 +27,7 @@ WD_CLASSES = ('Q11303 Q18142 Q41176 Q12518 Q1021645 Q27686 Q11166728 Q1440476 Q1
 WD_QUERY = '''SELECT DISTINCT ?item ?h ?coord WHERE {{ ?item wdt:P31 wd:{c} ;
   p:P2048/psv:P2048/wikibase:quantityNormalized ?n ; wdt:P625 ?coord .
   ?n wikibase:quantityAmount ?h ; wikibase:quantityUnit wd:Q11573 . FILTER(?h >= 100 && ?h < 1000) }}'''
-SUPERTALL, MAX_STOREY = 300, 8  # metres: >= SUPERTALL needs Wikidata or a 2.5-6 m storey; height/num_floors > MAX_STOREY is a bad height
+SUPERTALL, MAX_STOREY = 300, 12  # metres: >= SUPERTALL needs Wikidata or a 2.5-6 m storey; height/num_floors > MAX_STOREY is a bad height
 
 # Official building sources, by GISCO country id. They replace Overture inside that country.
 # One without a parquet URL yet is skipped, and Overture stays there until it is published.
@@ -58,13 +58,16 @@ def get_json(url, tries=4):
 
 
 def release():
-    """Newest Overture release and its building files (each release is deleted ~60 days after it is published)."""
+    """Newest Overture release and its building and building_part files (each release is deleted ~60 days after publishing).
+    Parts matter: towers mapped as parts (Burj Khalifa) have no height on the building itself, only on its parts."""
     rel = sorted(l['href'] for l in get_json(STAC)['links'] if l['rel'] == 'child')[-1]
-    coll = rel.replace('catalog.json', 'buildings/building/collection.json')
-    items = [l['href'] for l in get_json(coll)['links'] if l['rel'] == 'item']
-    with cf.ThreadPoolExecutor(16) as ex:
-        files = sorted((i['id'], i['assets']['aws']['href']) for i in ex.map(get_json, items))
-    return rel.rstrip('/').split('/')[-2], files
+    files = []
+    for kind, prefix in (('building', ''), ('building_part', 'part-')):
+        coll = rel.replace('catalog.json', f'buildings/{kind}/collection.json')
+        items = [l['href'] for l in get_json(coll)['links'] if l['rel'] == 'item']
+        with cf.ThreadPoolExecutor(16) as ex:
+            files += [(prefix + i['id'], i['assets']['aws']['href']) for i in ex.map(get_json, items)]
+    return rel.rstrip('/').split('/')[-2], sorted(files)
 
 
 def coverage():
@@ -85,7 +88,7 @@ def extract_one(fid, url, min_h):
         return fid, 'kept'
     tmp = out.with_suffix('.part')
     db().execute(f"""COPY (SELECT id, height, coalesce(min_height, 0) AS min_height, names.primary AS name,
-                                  'overture' AS source, num_floors, geometry
+                                  '{"overture_part" if fid.startswith("part-") else "overture"}' AS source, num_floors, geometry
                            FROM read_parquet('{url}') WHERE height >= {min_h})
                      TO '{tmp}' (FORMAT parquet, COMPRESSION zstd)""")
     tmp.rename(out)  # only finished files count, so a failed run resumes where it stopped
@@ -138,15 +141,19 @@ def wikidata():
 def reject(con):
     """Move implausible Overture heights from table b to out/rejected.parquet, with the reason."""
     con.execute(f"CREATE OR REPLACE TABLE w AS SELECT DISTINCT h, ST_GeomFromText(coord) p FROM read_csv('{wikidata()}')")
-    # Suspect: a storey over MAX_STOREY m, or SUPERTALL+ without a plausible 2.5-6 m storey (Wikidata misses many real
+    # Storey = (top - base) / floors: a part's floors cover only its own tier. Suspect: a storey over MAX_STOREY m, or SUPERTALL+ without a plausible 2.5-6 m storey (Wikidata misses many real
     # supertalls, e.g. Central Park Tower). A matching Wikidata height clears either (the floor count may be the wrong field).
     con.execute(f"""CREATE OR REPLACE TABLE r AS
-        SELECT b.id, CASE WHEN b.height / nullif(b.num_floors, 0) > {MAX_STOREY} THEN 'floors' ELSE 'wikidata' END AS reason
-        FROM b WHERE (coalesce(b.height / nullif(b.num_floors, 0) > {MAX_STOREY}, false)
-                      OR (b.height >= {SUPERTALL} AND NOT coalesce(b.height / nullif(b.num_floors, 0) BETWEEN 2.5 AND 6, false)))
+        SELECT b.id, CASE WHEN (b.height - b.min_height) / nullif(b.num_floors, 0) > {MAX_STOREY} THEN 'floors' ELSE 'wikidata' END AS reason
+        FROM b WHERE (coalesce((b.height - b.min_height) / nullif(b.num_floors, 0) > {MAX_STOREY}, false)
+                      OR (b.height >= {SUPERTALL} AND b.source = 'overture'  -- parts: every 500 m+ part checked was a real landmark
+                          AND NOT coalesce((b.height - b.min_height) / nullif(b.num_floors, 0) BETWEEN 2.5 AND 6, false)))
           AND NOT EXISTS (SELECT 1 FROM w WHERE abs(ST_Y(w.p) - ST_Y(ST_Centroid(b.geometry))) < 0.003
                             AND abs(ST_X(w.p) - ST_X(ST_Centroid(b.geometry))) < 0.004
-                            AND ST_Distance_Sphere(w.p, ST_Centroid(b.geometry)) < 300 AND abs(b.height - w.h) / w.h <= 0.15)""")
+                            AND ST_Distance_Sphere(w.p, ST_Centroid(b.geometry)) < 300
+                            -- a part is one tier of a building, so it only has to be no taller than the whole
+                            AND CASE WHEN b.source = 'overture_part' THEN b.height <= w.h * 1.15
+                                     ELSE abs(b.height - w.h) / w.h <= 0.15 END)""")
     con.execute(f"COPY (SELECT b.*, r.reason FROM b JOIN r USING (id) ORDER BY height DESC) TO '{OUT}/rejected.parquet' (FORMAT parquet, COMPRESSION zstd)")
     con.execute('DELETE FROM b WHERE id IN (SELECT id FROM r)')
     return dict(con.execute('SELECT reason, count(*) FROM r GROUP BY 1').fetchall())
