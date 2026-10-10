@@ -10,6 +10,10 @@ on:
         description: Rebuild even if this Overture release is already published
         type: boolean
         default: false
+      publish_force:
+        description: Publish even if a row count dropped more than 10 % (manifest.py gate)
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -60,6 +64,7 @@ jobs:
         name: publish
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PUBLISH_FORCE: ${{ inputs.publish_force && '1' || '0' }}
         run: python publish.py | tee status/last-run.json
       - name: keep-alive commit
         run: |

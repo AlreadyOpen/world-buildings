@@ -2,7 +2,7 @@
 
 Official building sources win inside their country; Overture fills the rest. Usage:
     python skylines.py extract [--min-height 30] [--files 00058,00377]   # out/parts-v2/<file>.parquet, resumable
-    python skylines.py build                                              # out/<source>.parquet + <source>.pmtiles + sources.json
+    python skylines.py build                                              # out/<source>.parquet + <source>.pmtiles + build.json
     python skylines.py check                                              # fails if Overture is left inside official coverage
     python skylines.py latest                                             # prints the newest Overture release name
 SKY_DATA moves the data folder (default ./data next to this file).
@@ -192,7 +192,7 @@ def build(a):
         'official': {cc.lower(): {k: v for k, v in s.items() if k != 'select'} for cc, s in OFFICIAL.items() if s['parquet']},
         'rows': rows, 'outputs': outputs,
     }
-    (OUT / 'sources.json').write_text(json.dumps(sources, indent=1))
+    (OUT / 'build.json').write_text(json.dumps(sources, indent=1))
     print(json.dumps({'rows': rows, 'outputs': outputs}))
 
 

@@ -1,6 +1,7 @@
 ---
 pretty_name: World skylines (tall buildings with heights)
 license: odbl
+license_link: https://opendatacommons.org/licenses/odbl/1-0/
 tags:
   - geospatial
   - buildings
@@ -22,7 +23,7 @@ One file per source, never merged, so each keeps its own licence:
 - Bucket [alreadyopen/world-skylines](https://huggingface.co/buckets/alreadyopen/world-skylines) `overture.pmtiles` (and
   `hk.pmtiles`, ...): vector tiles z6-13, layer `skylines`, for MapLibre `fill-extrusion` (height `height`, base `min_height`).
   Overture's file leaves out every country that has an official file.
-- `sources.json`: the Overture release, official sources used, row counts, and sha256 of each output
+- `manifest.json` (dataset and bucket): the Overture release, row counts per file, sha256 and size of each output, and the sources
 
 ```python
 import duckdb
@@ -40,8 +41,11 @@ sources are taken as published. Rejected buildings stay listed so they can be fi
 
 - Overture Maps Foundation buildings and building parts (which include OpenStreetMap data; tall towers such as Burj Khalifa carry their height only on their parts), [ODbL-1.0](https://opendatacommons.org/licenses/odbl/1-0/).
   Attribution: Overture Maps Foundation; © OpenStreetMap contributors. `overture.*` is a derived database, so it is ODbL-1.0 too.
-- Each official file is under its source's own terms (listed in `sources.json`), e.g. `hk.*`: Lands Department via the
+- Each official file is under its source's own terms (listed in `manifest.json`), e.g. `hk.*`: Lands Department via the
   CSDI Portal, under the [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC). The card's `license: odbl`
   covers the Overture files; the official files are not relicensed.
+
+- Height check only (not published): Wikidata (CC0). Coverage cut only (not published): GISCO country outlines,
+  © EuroGeographics for the administrative boundaries.
 
 Provided as is, with no warranty, and not endorsed by any of the sources.

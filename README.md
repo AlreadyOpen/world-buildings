@@ -13,7 +13,7 @@ Part of [AlreadyOpen](https://github.com/AlreadyOpen): open, re-runnable pipelin
 |---|---|---|
 | Tall buildings with footprints, one file per source | [huggingface.co/datasets/alreadyopen/world-skylines](https://huggingface.co/datasets/alreadyopen/world-skylines) | GeoParquet (ZSTD) |
 | Vector tiles z6-13, layer `skylines` (`height`, `min_height`, `name`), one file per source | [huggingface.co/buckets/alreadyopen/world-skylines](https://huggingface.co/buckets/alreadyopen/world-skylines) | PMTiles |
-| Sources, licences, row counts, sha256 per output | both, `sources.json` | JSON |
+| Release, row counts per file, sha256 per output, sources | both, `manifest.json` | JSON |
 
 Both answer CORS and HTTP Range requests (MapLibre with the `pmtiles` protocol; DuckDB for the Parquet).
 
@@ -22,9 +22,9 @@ Both answer CORS and HTTP Range requests (MapLibre with the `pmtiles` protocol; 
 ```bash
 pip install -r requirements.txt          # plus tippecanoe (apt install tippecanoe / brew install tippecanoe)
 python skylines.py extract               # reads only height + bbox of all ~2.5 billion buildings, then footprints of the tall ones
-python skylines.py build                 # -> data/out/<source>.parquet, <source>.pmtiles, sources.json
+python skylines.py build                 # -> data/out/<source>.parquet, <source>.pmtiles, build.json
 python skylines.py check                 # fails if an Overture building is left inside an official source's country
-python publish.py                        # -> Hugging Face (needs HF_TOKEN)
+python publish.py                        # -> Hugging Face (needs HF_TOKEN); refuses if a count drops > 10 % (manifest.py)
 ```
 
 `--files 00058,00377` limits `extract` to some of Overture's 512 files (a quick test); `SKY_DATA` moves the data folder.
@@ -46,6 +46,7 @@ sources are taken as published. Rejected buildings stay listed so they can be fi
 - Official sources keep their own terms and are published as separate files, never merged into the ODbL files:
   Hong Kong (`hk.*`): Lands Department via the CSDI Portal, [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC).
 - Country outlines (for official coverage): Eurostat GISCO, © EuroGeographics for the administrative boundaries.
+- Height check: Wikidata (CC0). Declared sources with licences: `sources.json`; CI checks them (`check.py`).
 
 Outputs are provided as is, with no warranty, and are not endorsed by any source.
 
