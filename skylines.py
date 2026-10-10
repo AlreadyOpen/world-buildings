@@ -30,7 +30,7 @@ OFFICIAL = {
 
 def db():
     con = duckdb.connect()
-    con.execute('INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs')
+    con.execute('LOAD spatial; LOAD httpfs')  # installed once in __main__: parallel INSTALLs race on a fresh machine
     return con
 
 
@@ -67,15 +67,14 @@ def coverage():
     return db().execute(f"SELECT ST_AsText(ST_Union_Agg(geom)) FROM ST_Read('{p}') WHERE CNTR_ID IN ({ids})").fetchone()[0]
 
 
-def extract_one(fid, url, min_h, cover):
+def extract_one(fid, url, min_h):
     out = OUT / 'parts' / f'{fid}.parquet'
     if out.exists():
         return fid, 'kept'
-    skip = f"AND NOT ST_Intersects(ST_Centroid(geometry), ST_GeomFromText('{cover}'))" if cover else ''
     tmp = out.with_suffix('.part')
     db().execute(f"""COPY (SELECT id, height, coalesce(min_height, 0) AS min_height, names.primary AS name,
                                   'overture' AS source, geometry
-                           FROM read_parquet('{url}') WHERE height >= {min_h} {skip})
+                           FROM read_parquet('{url}') WHERE height >= {min_h})
                      TO '{tmp}' (FORMAT parquet, COMPRESSION zstd)""")
     tmp.rename(out)  # only finished files count, so a failed run resumes where it stopped
     return fid, db().execute(f"SELECT count(*) FROM '{out}'").fetchone()[0]
@@ -87,9 +86,9 @@ def extract(a):
     if a.files:
         files = [f for f in files if f[0] in a.files.split(',')]
     (OUT / 'release.json').write_text(json.dumps({'release': rel, 'min_height': a.min_height, 'files': len(files)}))
-    cover, t = coverage(), time.time()
+    t = time.time()
     with cf.ThreadPoolExecutor(a.workers) as ex:
-        for fid, n in ex.map(lambda f: extract_one(*f, a.min_height, cover), files):
+        for fid, n in ex.map(lambda f: extract_one(*f, a.min_height), files):
             print(f'{fid} {n} ({time.time() - t:.0f} s)', flush=True)
 
 
@@ -105,7 +104,10 @@ def build(a):
     """One Parquet + one PMTiles per source, never merged: Overture is ODbL (share-alike) and official sources keep their own terms."""
     meta = json.loads((OUT / 'release.json').read_text())
     con = db()
-    groups = {'overture': f"SELECT * FROM read_parquet('{OUT}/parts/*.parquet')"}
+    # Parts hold all of Overture; official countries are cut here, so cached parts stay valid when sources change.
+    cover = coverage()
+    skip = f"WHERE NOT ST_Intersects(ST_Centroid(geometry), ST_GeomFromText('{cover}'))" if cover else ''
+    groups = {'overture': f"SELECT * FROM read_parquet('{OUT}/parts/*.parquet') {skip}"}
     for cc, s in OFFICIAL.items():
         if s['parquet']:
             groups[cc.lower()] = f"SELECT {s['select']} FROM read_parquet('{s['parquet']}') WHERE height_m >= {meta['min_height']}"
@@ -141,7 +143,7 @@ def check(a):
     if not cover:
         print('no official source published yet: nothing to check')
         return
-    n = db().execute(f"""SELECT count(*) FROM read_parquet('{OUT}/parts/*.parquet')
+    n = db().execute(f"""SELECT count(*) FROM read_parquet('{OUT}/overture.parquet')
                          WHERE ST_Intersects(ST_Centroid(geometry), ST_GeomFromText('{cover}'))""").fetchone()[0]
     print(f'Overture buildings inside official coverage: {n}')
     sys.exit(1 if n else 0)
@@ -156,4 +158,5 @@ if __name__ == '__main__':
     e.add_argument('--workers', type=int, default=4)
     s.add_parser('build'); s.add_parser('check'); s.add_parser('latest')
     a = p.parse_args()
+    duckdb.connect().execute('INSTALL spatial; INSTALL httpfs')
     {'extract': extract, 'build': build, 'check': check, 'latest': latest}[a.cmd](a)
