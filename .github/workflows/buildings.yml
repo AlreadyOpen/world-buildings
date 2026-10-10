@@ -57,7 +57,20 @@ jobs:
         with:
           python-version: '3.14'
           cache: pip
-      - run: pip install -r requirements.txt && sudo apt-get update -q && sudo apt-get install -y -q tippecanoe
+      - run: pip install -r requirements.txt
+      # tippecanoe 2.79.0 from source: apt's 2.49 drops most buildings and never extends past z13 (probe 2026-10-10:
+      # 5,295 features at z13 for 4,076,035 rows); 2.79 keeps every building at z14 (local Manhattan test).
+      - id: tip
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
+        with:
+          path: /opt/tippecanoe
+          key: tippecanoe-2.79.0-ubuntu-24.04
+      - if: steps.tip.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y -q libsqlite3-dev zlib1g-dev
+          git clone -q https://github.com/felt/tippecanoe /tmp/tip && git -C /tmp/tip checkout -q 68ab8dcc229f95b8b25877697d5e8d66783af503
+          make -C /tmp/tip -j"$(nproc)" PREFIX=/opt/tippecanoe && sudo make -C /tmp/tip install PREFIX=/opt/tippecanoe
+      - run: echo /opt/tippecanoe/bin >> "$GITHUB_PATH"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
         with:
           name: plan
