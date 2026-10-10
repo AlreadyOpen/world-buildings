@@ -64,6 +64,7 @@ jobs:
           path: data
       - name: region
         run: |
-          /usr/bin/time -v python buildings.py region ${{ matrix.region }} 2> time.txt; rc=$?
-          grep -E 'Elapsed|Maximum resident' time.txt; df -h / | tail -1; du -sh data/out/*
+          /usr/bin/time -v python buildings.py region ${{ matrix.region }} 2> time.txt && rc=0 || rc=$?
+          grep -vE '^\s' time.txt | tail -40; grep -E 'Elapsed|Maximum resident' time.txt; df -h / | tail -1; du -sh data/out/*
+          tippecanoe --version 2>&1; tippecanoe-decode -c data/out/${{ matrix.region }}.pmtiles 2>/dev/null | grep -o '"maxzoom": [0-9]*' | sort | uniq -c
           exit $rc
