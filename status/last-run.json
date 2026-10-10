@@ -1,1 +1,1 @@
-{"release": "2026-09-23.1", "counts": {"overture": 364309, "hk": 17833, "rejected_wikidata": 141, "rejected_floors": 4026}, "dataset": "https://huggingface.co/datasets/alreadyopen/world-skylines", "bucket": "https://huggingface.co/buckets/alreadyopen/world-skylines"}
+{"release": "2026-09-23.1", "counts": {"overture": 361411, "hk": 17833, "nl": 5767, "rejected_wikidata": 140, "rejected_floors": 4009}, "dataset": "https://huggingface.co/datasets/alreadyopen/world-skylines", "bucket": "https://huggingface.co/buckets/alreadyopen/world-skylines"}
