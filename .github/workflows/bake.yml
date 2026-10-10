@@ -65,7 +65,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PUBLISH_FORCE: ${{ inputs.publish_force && '1' || '0' }}
-        run: python publish.py | tee status/last-run.json
+        run: set -o pipefail; python publish.py | tee status/last-run.json
       # Kaggle mirror (Helen's account; a group cannot own datasets). Its own step, allowed to fail: never blocks Hugging Face.
       - if: steps.rel.outputs.build == 'true'
         name: mirror to Kaggle
