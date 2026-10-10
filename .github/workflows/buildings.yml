@@ -83,7 +83,12 @@ jobs:
         with:
           name: plan
           path: data
+      # a rerun skips regions this release already published (a runner died on two of them on 2026-10-10)
+      - id: done
+        if: inputs.publish
+        run: python publish_buildings.py done ${{ matrix.region }} && echo "skip=true" >> "$GITHUB_OUTPUT" || echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: region
+        if: steps.done.outputs.skip != 'true'
         run: |
           /usr/bin/time -v python buildings.py region ${{ matrix.region }} 2> time.txt && rc=0 || rc=$?
           grep -vE '^\s' time.txt | tail -40; grep -E 'Elapsed|Maximum resident' time.txt; df -h / | tail -1; du -sh data/out/*
@@ -92,18 +97,13 @@ jobs:
       - if: ${{ !inputs.publish }}
         run: |
           tippecanoe-decode -c data/out/${{ matrix.region }}.pmtiles 2>/dev/null | grep -o '"maxzoom": [0-9]*' | sort | uniq -c
-      - if: inputs.publish
+      - if: inputs.publish && steps.done.outputs.skip != 'true'
         name: publish region
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python publish_buildings.py region ${{ matrix.region }}
-      - if: inputs.publish
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
-        with:
-          name: pub-${{ matrix.region }}
-          path: data/out/${{ matrix.region }}.pub.json
       # Kaggle mirror per region (Helen's account). Allowed to fail: never blocks Hugging Face.
-      - if: inputs.publish
+      - if: inputs.publish && steps.done.outputs.skip != 'true'
         name: mirror to Kaggle
         continue-on-error: true
         env:
@@ -131,11 +131,6 @@ jobs:
         with:
           name: plan
           path: data
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
-        with:
-          pattern: pub-*
-          path: data/out
-          merge-multiple: true
       - env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PUBLISH_FORCE: ${{ inputs.publish_force && '1' || '0' }}

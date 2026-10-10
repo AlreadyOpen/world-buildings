@@ -31,6 +31,9 @@ MAXZOOM = 13
 def db():
     con = duckdb.connect()
     con.execute('LOAD spatial; LOAD httpfs')
+    # A 16 GB runner died ("lost communication") on two 15 M-row regions on 2026-10-10: cap DuckDB so tippecanoe, which runs
+    # alongside it, keeps room; DuckDB spills to disk past the cap. SKY_DUCKDB_MEM overrides.
+    con.execute(f"SET memory_limit = '{os.environ.get('SKY_DUCKDB_MEM', '6GB')}'; SET threads = 2; SET preserve_insertion_order = false")
     return con
 
 

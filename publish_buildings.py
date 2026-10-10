@@ -6,7 +6,7 @@
   finalize      with every out/*.pub.json: gate (manifest.py), then index.json + manifest.json at the root of both, last.
                 /map reads index.json: {release, layer, regions: [{id, source, bbox, rows, tiles}]}.
 One region per source licence: Overture regions are ODbL, `hk` is CSDI terms; never merged."""
-import json, os, sys
+import json, os, sys, urllib.error, urllib.request
 from pathlib import Path
 from huggingface_hub import HfApi, batch_bucket_files, create_bucket
 import manifest
@@ -35,12 +35,30 @@ def region(rid):
            'tiles': f'{BUCKET}/v/{rel}/{rid}.pmtiles',
            'files': {k: {'sha256': manifest.sha256(p), 'bytes': p.stat().st_size} for k, p in files.items()}}
     (OUT / f'{rid}.pub.json').write_text(json.dumps(pub))
+    # also published, so a rerun skips this region and finalize can read it from any run
+    batch_bucket_files(REPO, add=[(str(OUT / f'{rid}.pub.json'), f'v/{rel}/{rid}.pub.json')])
     print(json.dumps({k: pub[k] for k in ('id', 'rows', 'tiles')}))
+
+
+def done(rid):
+    """exit 0 when this release's region is already published (a rerun skips it), 1 otherwise"""
+    try:
+        urllib.request.urlopen(f'{BUCKET}/v/{release()}/{rid}.pub.json', timeout=60); sys.exit(0)
+    except urllib.error.HTTPError:
+        sys.exit(1)
 
 
 def finalize():
     rel = release()
-    regs = [json.loads(p.read_text()) for p in sorted(OUT.glob('*.pub.json'))]
+    ids = sorted(json.loads((OUT / 'plan.json').read_text())['regions']) + [cc for cc in os.environ.get('OFFICIAL', 'hk').split(',') if cc]
+    regs, missing = [], []
+    for rid in ids:                                                        # every region of the plan, from whichever run made it
+        try:
+            regs.append(json.load(urllib.request.urlopen(f'{BUCKET}/v/{rel}/{rid}.pub.json', timeout=60)))
+        except urllib.error.HTTPError:
+            missing.append(rid)
+    if missing:
+        sys.exit(f'not finalizing: regions not published yet: {missing}')
     counts = {}
     for r in regs:
         counts[r['source']] = counts.get(r['source'], 0) + (r['rows'] or 0)
@@ -64,4 +82,4 @@ def finalize():
 
 
 if __name__ == '__main__':
-    {'region': lambda: region(sys.argv[2]), 'finalize': finalize}[sys.argv[1]]()
+    {'region': lambda: region(sys.argv[2]), 'done': lambda: done(sys.argv[2]), 'finalize': finalize}[sys.argv[1]]()
