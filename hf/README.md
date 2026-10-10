@@ -42,7 +42,9 @@ sources are taken as published. Rejected buildings stay listed so they can be fi
 - Overture Maps Foundation buildings and building parts (which include OpenStreetMap data; tall towers such as Burj Khalifa carry their height only on their parts), [ODbL-1.0](https://opendatacommons.org/licenses/odbl/1-0/).
   Attribution: Overture Maps Foundation; © OpenStreetMap contributors. `overture.*` is a derived database, so it is ODbL-1.0 too.
 - Each official file is under its source's own terms (listed in `manifest.json`), e.g. `hk.*`: Lands Department via the
-  CSDI Portal, under the [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC). The card's `license: odbl`
+  CSDI Portal, under the [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC); `nl.*`:
+  © 3DBAG by tudelft3d and 3DGI, [CC BY 4.0](https://docs.3dbag.nl/en/copyright/) (changed: height = 70th-percentile roof minus ground level,
+  buildings under 30 m left out). The card's `license: odbl`
   covers the Overture files; the official files are not relicensed.
 
 - Height check only (not published): Wikidata (CC0). Coverage cut only (not published): GISCO country outlines,

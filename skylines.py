@@ -30,14 +30,47 @@ WD_QUERY = '''SELECT DISTINCT ?item ?h ?coord WHERE {{ ?item wdt:P31 wd:{c} ;
 SUPERTALL, MAX_STOREY = 300, 12  # metres: >= SUPERTALL needs Wikidata or a 2.5-6 m storey; height/num_floors > MAX_STOREY is a bad height
 
 # Official building sources, by GISCO country id. They replace Overture inside that country.
-# One without a parquet URL yet is skipped, and Overture stays there until it is published.
 OFFICIAL = {
     'HK': {'title': 'Lands Department buildings, via AlreadyOpen hk-buildings',
            'parquet': 'https://huggingface.co/datasets/alreadyopen/hk-buildings/resolve/main/buildings.parquet',
+           'height': 'height_m',
            'select': "BuildingCSUID, height_m, 0, BuildingNameEN, 'landsd', Storeys, geometry",
            'licence': 'CSDI Terms of Use https://portal.csdi.gov.hk/csdi-webpage/doc/TNC',
            'attribution': 'Government of the HKSAR, CSDI Portal; Lands Department'},
+    # 3DBAG's WFS filters on the server, so only the tall buildings are fetched (the whole country is a 19.6 GB file).
+    # Height = 70th-percentile roof minus ground (b3_h_max has spikes: one building reads 2,189 m).
+    'NL': {'title': '3DBAG (LoD1.2), via its WFS',
+           'wfs': {'url': 'https://data.3dbag.nl/api/BAG3D/wfs', 'layer': 'BAG3D:lod12',
+                   'fields': 'identificatie,b3_h_70p,b3_h_maaiveld,b3_bouwlagen,geom',
+                   'filter': 'b3_h_70p - b3_h_maaiveld >= {min_h}'},
+           'height': 'b3_h_70p - b3_h_maaiveld',
+           'select': "identificatie, b3_h_70p - b3_h_maaiveld, 0, NULL, '3dbag', b3_bouwlagen, geom",
+           'licence': 'CC BY 4.0 https://docs.3dbag.nl/en/copyright/',
+           'attribution': '© 3DBAG by tudelft3d and 3DGI (height = b3_h_70p - b3_h_maaiveld, buildings below the threshold left out)'},
 }
+
+
+def official_from(cc, s, min_h):
+    """DuckDB table expression for an official source; a WFS source is paged into a local GeoJSON file first."""
+    if 'parquet' in s:
+        return f"read_parquet('{s['parquet']}')"
+    w, path, page = s['wfs'], CACHE / f'{cc.lower()}.geojson', 1000
+    if not path.exists():
+        feats, start = [], 0
+        while True:
+            q = urllib.parse.urlencode({'service': 'WFS', 'version': '2.0.0', 'request': 'GetFeature', 'typeNames': w['layer'],
+                                        'outputFormat': 'application/json', 'srsName': 'EPSG:4326', 'propertyName': w['fields'],
+                                        'cql_filter': w['filter'].format(min_h=min_h), 'sortBy': 'identificatie',
+                                        'count': page, 'startIndex': start})
+            d = get_json(f"{w['url']}?{q}")
+            feats += d['features']
+            if len(d['features']) < page:
+                break
+            start += page
+        if len(feats) != d.get('numberMatched', len(feats)):
+            sys.exit(f"{cc}: got {len(feats)} features, server matched {d.get('numberMatched')}")
+        path.write_text(json.dumps({'type': 'FeatureCollection', 'features': feats}))
+    return f"ST_Read('{path}')"
 
 
 def db():
@@ -72,7 +105,7 @@ def release():
 
 def coverage():
     """WKT of the countries whose official source is published, or None."""
-    live = [cc for cc, s in OFFICIAL.items() if s['parquet']]
+    live = list(OFFICIAL)
     if not live:
         return None
     p = CACHE / 'gisco-countries-01m.geojson'
@@ -168,8 +201,7 @@ def build(a):
     skip = f"WHERE NOT ST_Intersects(ST_Centroid(geometry), ST_GeomFromText('{cover}'))" if cover else ''
     groups = {'overture': f"SELECT * FROM read_parquet('{PARTS}/*.parquet') {skip}"}
     for cc, s in OFFICIAL.items():
-        if s['parquet']:
-            groups[cc.lower()] = f"SELECT {s['select']} FROM read_parquet('{s['parquet']}') WHERE height_m >= {meta['min_height']}"
+        groups[cc.lower()] = f"SELECT {s['select']} FROM {official_from(cc, s, meta['min_height'])} WHERE {s['height']} >= {meta['min_height']}"
     outputs, rows = {}, {}
     for name, q in groups.items():
         con.execute(f'CREATE OR REPLACE TABLE b ({COLS})'); con.execute(f'INSERT INTO b {q}')
@@ -189,7 +221,7 @@ def build(a):
         'overture': {'release': meta['release'], 'theme': 'buildings/building', 'min_height_m': meta['min_height'],
                      'files': meta['files'], 'licence': 'ODbL-1.0',
                      'attribution': 'Overture Maps Foundation; (c) OpenStreetMap contributors'},
-        'official': {cc.lower(): {k: v for k, v in s.items() if k != 'select'} for cc, s in OFFICIAL.items() if s['parquet']},
+        'official': {cc.lower(): {k: v for k, v in s.items() if k != 'select'} for cc, s in OFFICIAL.items()},
         'rows': rows, 'outputs': outputs,
     }
     (OUT / 'build.json').write_text(json.dumps(sources, indent=1))

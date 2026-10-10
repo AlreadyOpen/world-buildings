@@ -4,8 +4,8 @@ Every building in the world with a known height of 30 m or more, as 3D-ready vec
 [Overture Maps](https://overturemaps.org) release and published for browsers to read in place.
 
 Overture's own `buildings.pmtiles` carries heights only at zoom 14, so from further out every city is flat. This fills that gap.
-Official government building data replaces Overture inside its country (Hong Kong first, from
-[AlreadyOpen/hk-buildings](https://huggingface.co/datasets/alreadyopen/hk-buildings) once published).
+Official building data replaces Overture inside its country: Hong Kong from
+[AlreadyOpen/hk-buildings](https://huggingface.co/datasets/alreadyopen/hk-buildings), the Netherlands from [3DBAG](https://3dbag.nl).
 
 Part of [AlreadyOpen](https://github.com/AlreadyOpen): open, re-runnable pipelines over public data.
 
@@ -45,6 +45,8 @@ sources are taken as published. Rejected buildings stay listed so they can be fi
   and are therefore also ODbL-1.0.
 - Official sources keep their own terms and are published as separate files, never merged into the ODbL files:
   Hong Kong (`hk.*`): Lands Department via the CSDI Portal, [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC).
+  Netherlands (`nl.*`): © 3DBAG by tudelft3d and 3DGI, [CC BY 4.0](https://docs.3dbag.nl/en/copyright/), read from its WFS
+  with a server-side filter; changed: height = `b3_h_70p - b3_h_maaiveld` (70th-percentile roof minus ground), under 30 m left out.
 - Country outlines (for official coverage): Eurostat GISCO, © EuroGeographics for the administrative boundaries.
 - Height check: Wikidata (CC0). Declared sources with licences: `sources.json`; CI checks them (`check.py`).
 
