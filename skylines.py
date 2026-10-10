@@ -22,10 +22,11 @@ WIKIDATA = 'https://query.wikidata.org/sparql'
 # Buildings and towers with a height and coordinates, for checking supertall heights. Classes listed (no subclass walk):
 # skyscraper, high-rise, building, tower, office building, hotel, TV tower, observation tower, church building, cathedral,
 # chimney, mosque, residential skyscraper, ..., bell tower. The full "anything with a height" query times out.
-WD_QUERY = '''SELECT DISTINCT ?item ?h ?coord WHERE { VALUES ?c { wd:Q11303 wd:Q18142 wd:Q41176 wd:Q12518 wd:Q1021645
-  wd:Q27686 wd:Q11166728 wd:Q1440476 wd:Q16970 wd:Q2977 wd:Q2962545 wd:Q32815 wd:Q13402009 wd:Q1307276 wd:Q15848826
-  wd:Q2088357 } ?item wdt:P31 ?c ; p:P2048/psv:P2048/wikibase:quantityNormalized ?n ; wdt:P625 ?coord .
-  ?n wikibase:quantityAmount ?h ; wikibase:quantityUnit wd:Q11573 . FILTER(?h >= 100 && ?h < 1000) }'''
+WD_CLASSES = ('Q11303 Q18142 Q41176 Q12518 Q1021645 Q27686 Q11166728 Q1440476 Q16970 Q2977 Q2962545 Q32815 Q13402009 '
+              'Q1307276 Q15848826 Q2088357').split()
+WD_QUERY = '''SELECT DISTINCT ?item ?h ?coord WHERE {{ ?item wdt:P31 wd:{c} ;
+  p:P2048/psv:P2048/wikibase:quantityNormalized ?n ; wdt:P625 ?coord .
+  ?n wikibase:quantityAmount ?h ; wikibase:quantityUnit wd:Q11573 . FILTER(?h >= 100 && ?h < 1000) }}'''
 SUPERTALL, MAX_STOREY = 300, 8  # metres: >= SUPERTALL needs Wikidata or a 2.5-6 m storey; height/num_floors > MAX_STOREY is a bad height
 
 # Official building sources, by GISCO country id. They replace Overture inside that country.
@@ -112,15 +113,25 @@ def sha256(p):
 
 
 def wikidata():
+    """Tall buildings and towers from Wikidata, one query per class: a single query times out on CI runners."""
     p = CACHE / 'wikidata-tall.csv'
-    if not p.exists():
-        req = urllib.request.Request(WIKIDATA + '?' + urllib.parse.urlencode({'query': WD_QUERY}),
-                                     headers={'Accept': 'text/csv', 'User-Agent': 'AlreadyOpen-world-skylines (https://github.com/AlreadyOpen/world-skylines)'})
-        body = urllib.request.urlopen(req, timeout=120).read().decode()
-        # A WDQS timeout still answers 200: partial rows, then a Java stack trace. Refuse it.
-        if 'Exception' in body or body.count('\n') < 1000:
-            sys.exit(f'Wikidata answer looks truncated ({body.count(chr(10))} lines)')
-        p.write_text(body)
+    if p.exists():
+        return p
+    rows = ['item,h,coord']
+    for c in WD_CLASSES:
+        url = WIKIDATA + '?' + urllib.parse.urlencode({'query': WD_QUERY.format(c=c)})
+        hdr = {'Accept': 'text/csv', 'User-Agent': 'AlreadyOpen-world-skylines (https://github.com/AlreadyOpen/world-skylines)'}
+        for n in range(4):
+            body = urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=120).read().decode()
+            if 'Exception' not in body:  # a WDQS timeout still answers 200: partial rows, then a Java stack trace
+                break
+            time.sleep(10 * (n + 1))
+        else:
+            sys.exit(f'Wikidata query for {c} kept timing out')
+        rows += body.strip().splitlines()[1:]
+    if len(rows) < 1000:
+        sys.exit(f'Wikidata gave only {len(rows)} rows')
+    p.write_text('\n'.join(rows) + '\n')
     return p
 
 
