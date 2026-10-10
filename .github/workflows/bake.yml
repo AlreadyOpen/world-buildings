@@ -66,6 +66,14 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PUBLISH_FORCE: ${{ inputs.publish_force && '1' || '0' }}
         run: python publish.py | tee status/last-run.json
+      # Kaggle mirror (Helen's account; a group cannot own datasets). Its own step, allowed to fail: never blocks Hugging Face.
+      - if: steps.rel.outputs.build == 'true'
+        name: mirror to Kaggle
+        continue-on-error: true
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_MESSAGE: Overture ${{ steps.rel.outputs.release }}
+        run: python kaggle_mirror.py helenkwok/world-skylines "AlreadyOpen: World skylines" data/out/*.parquet data/out/*.pmtiles data/out/manifest.json
       - name: keep-alive commit
         run: |
           git config user.name 'github-actions[bot]'

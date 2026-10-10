@@ -15,7 +15,9 @@ Part of [AlreadyOpen](https://github.com/AlreadyOpen): open, re-runnable pipelin
 | Vector tiles z6-13, layer `skylines` (`height`, `min_height`, `name`), one file per source | [huggingface.co/buckets/alreadyopen/world-skylines](https://huggingface.co/buckets/alreadyopen/world-skylines) | PMTiles |
 | Release, row counts per file, sha256 per output, sources | both, `manifest.json` | JSON |
 
-Both answer CORS and HTTP Range requests (MapLibre with the `pmtiles` protocol; DuckDB for the Parquet).
+| The same files, mirrored | [kaggle.com/datasets/helenkwok/world-skylines](https://www.kaggle.com/datasets/helenkwok/world-skylines) | uploaded after each publish |
+
+Both Hugging Face locations answer CORS and HTTP Range requests (MapLibre with the `pmtiles` protocol; DuckDB for the Parquet).
 
 ## Run it
 
