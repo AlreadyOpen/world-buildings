@@ -11,6 +11,14 @@ on:
         description: 'Buildings with a height per region job'
         type: string
         default: '15000000'
+      publish:
+        description: 'Publish to Hugging Face (versioned paths, then index.json + manifest.json) and mirror each region to Kaggle'
+        type: boolean
+        default: false
+      publish_force:
+        description: Publish even if a count dropped more than 10 % (manifest.py gate)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -79,5 +87,56 @@ jobs:
         run: |
           /usr/bin/time -v python buildings.py region ${{ matrix.region }} 2> time.txt && rc=0 || rc=$?
           grep -vE '^\s' time.txt | tail -40; grep -E 'Elapsed|Maximum resident' time.txt; df -h / | tail -1; du -sh data/out/*
-          tippecanoe --version 2>&1; tippecanoe-decode -c data/out/${{ matrix.region }}.pmtiles 2>/dev/null | grep -o '"maxzoom": [0-9]*' | sort | uniq -c
           exit $rc
+      # a probe also counts features per zoom: the deepest zoom must hold every row (tippecanoe 2.49 silently did not)
+      - if: ${{ !inputs.publish }}
+        run: |
+          tippecanoe-decode -c data/out/${{ matrix.region }}.pmtiles 2>/dev/null | grep -o '"maxzoom": [0-9]*' | sort | uniq -c
+      - if: inputs.publish
+        name: publish region
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python publish_buildings.py region ${{ matrix.region }}
+      - if: inputs.publish
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: pub-${{ matrix.region }}
+          path: data/out/${{ matrix.region }}.pub.json
+      # Kaggle mirror per region (Helen's account). Allowed to fail: never blocks Hugging Face.
+      - if: inputs.publish
+        name: mirror to Kaggle
+        continue-on-error: true
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_MESSAGE: world-buildings ${{ matrix.region }}
+          CARD: hf/world-buildings.md
+        run: >-
+          python kaggle_mirror.py helenkwok/world-buildings-${{ matrix.region }} "AlreadyOpen: World buildings ${{ matrix.region }}"
+          data/out/${{ matrix.region }}/*.parquet data/out/${{ matrix.region }}.pmtiles
+  finalize:
+    needs: region
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SKY_DATA: ${{ github.workspace }}/data
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97   # v7.0.0
+        with:
+          python-version: '3.14'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          name: plan
+          path: data
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          pattern: pub-*
+          path: data/out
+          merge-multiple: true
+      - env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PUBLISH_FORCE: ${{ inputs.publish_force && '1' || '0' }}
+        run: python publish_buildings.py finalize

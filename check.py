@@ -4,13 +4,16 @@ Usage: python3 check.py"""
 import glob, json, py_compile, re, subprocess, sys
 
 for p in glob.glob('*.py'): py_compile.compile(p, doraise=True)
-src = json.load(open('sources.json')); card = open('hf/README.md', encoding='utf-8').read()
+src = json.load(open('sources.json'))
 assert src, 'sources.json is empty'
 for s in src:
     missing = {'name', 'owner', 'url', 'licence'} - s.keys()
     assert not missing, f'{s.get("name")}: missing {missing}'
     assert s['url'].startswith('https://') and s['licence'].startswith('https://'), f'{s["name"]}: url and licence must be https links'
-    assert s['owner'] in card, f'hf/README.md does not credit {s["owner"]}'
-assert re.search(r'^license_link: https://', card, re.M), 'hf/README.md has no license_link'
+for c in ('hf/README.md', 'hf/world-buildings.md'):                    # world-skylines card, world-buildings card
+    card = open(c, encoding='utf-8').read()
+    for s in src:
+        assert s['owner'] in card, f'{c} does not credit {s["owner"]}'
+    assert re.search(r'^license_link: https://', card, re.M), f'{c} has no license_link'
 subprocess.run([sys.executable, 'manifest.py'], check=True)
 print(f'check: ok ({len(src)} sources)')

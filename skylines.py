@@ -103,9 +103,9 @@ def release():
     return rel.rstrip('/').split('/')[-2], sorted(files)
 
 
-def coverage():
-    """WKT of the countries whose official source is published, or None."""
-    live = list(OFFICIAL)
+def coverage(live=None):
+    """WKT of the countries whose official source replaces Overture (default: every official source), or None."""
+    live = list(OFFICIAL) if live is None else live
     if not live:
         return None
     p = CACHE / 'gisco-countries-01m.geojson'

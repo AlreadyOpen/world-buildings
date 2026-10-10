@@ -2,11 +2,11 @@
 Kaggle's "Remote URL" cannot pull from Hugging Face (every HF download is a 302 to a signed URL, which Kaggle refuses), so the
 files are uploaded. Runs after publish.py as its own step with continue-on-error: Kaggle failing never blocks Hugging Face.
 Needs KAGGLE_API_TOKEN (Helen's token, as a repo secret). The dataset is owned by her account: a Kaggle group cannot own one.
-Description = hf/README.md without its YAML header; licence "other" (per-file terms are in the description).
+Description = hf/README.md (or $CARD) without its YAML header; licence "other" (per-file terms are in the description).
 Usage: python3 kaggle_mirror.py <owner/slug> "<title, 6-50 chars>" <file>...    (files are uploaded by base name)"""
 import json, os, re, subprocess, sys, tempfile
 
-def card_body(path='hf/README.md'):
+def card_body(path=os.environ.get('CARD', 'hf/README.md')):
     t = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), encoding='utf-8').read()
     return re.sub(r'\A---\n.*?\n---\n', '', t, flags=re.S).strip()
 

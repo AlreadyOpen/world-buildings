@@ -21,6 +21,9 @@ DATA = Path(os.environ.get('SKY_DATA', Path(__file__).resolve().parent / 'data')
 CACHE, OUT = DATA / 'cache', DATA / 'out'
 sk.CACHE, sk.OUT = CACHE, OUT
 # Tallest first: the zoom from which a building is drawn, by height (m). Every building is in the tiles from zoom 13.
+# Official sources wired for every building (a Parquet of all of them). Only these replace Overture: NL's official layer is
+# still the >= 30 m WFS subset, so Overture keeps the Netherlands until all of 3DBAG is in.
+ALL_OFFICIAL = [cc for cc, s in sk.OFFICIAL.items() if 'parquet' in s]
 BANDS = [(150, 6), (80, 8), (40, 10), (20, 11), (10, 12)]
 MAXZOOM = 13
 
@@ -58,7 +61,7 @@ def plan(a):
         p['regions']['parts'] = parts
     (OUT / 'plan.json').write_text(json.dumps(p))
     sk.wikidata()                                                          # once, shared with every region job
-    print(json.dumps({'region': sorted(p['regions'])}))
+    print(json.dumps({'region': sorted(p['regions']) + [cc.lower() for cc in ALL_OFFICIAL]}))
 
 
 def check_sql(table):
@@ -107,8 +110,10 @@ def tile(con, table, layer, out):
 
 
 def region(a):
+    if a.id.upper() in ALL_OFFICIAL:                                      # an official source is a region of its own
+        a.cc = a.id; return official(a)
     p = json.loads((OUT / 'plan.json').read_text()); files = p['regions'][a.id]
-    cover = sk.coverage()
+    cover = sk.coverage(ALL_OFFICIAL)
     d = OUT / a.id; d.mkdir(parents=True, exist_ok=True)
     con = db()
     con.execute(f"CREATE TABLE w AS SELECT DISTINCT h, ST_GeomFromText(coord) p FROM read_csv('{sk.wikidata()}')")
@@ -145,7 +150,10 @@ def official(a):
                     FROM read_parquet('{s['parquet']}') WHERE {s['height']} > 0""")
     con.execute(f"COPY r TO '{d}/{cc.lower()}.parquet' (FORMAT parquet, COMPRESSION zstd)")
     tile(con, 'r', 'buildings', OUT / f'{cc.lower()}.pmtiles')
-    print(json.dumps({'official': cc, 'rows': con.execute('SELECT count(*) FROM r').fetchone()[0]}))
+    s = con.execute('SELECT n, ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e) '
+                    'FROM (SELECT count(*) n, ST_Extent_Agg(geometry) e FROM r)').fetchone()
+    (OUT / f'{cc.lower()}.json').write_text(json.dumps({'region': cc.lower(), 'rows': s[0], 'checked': 0, 'bbox': s[1:]}))
+    print(json.dumps({'official': cc, 'rows': s[0]}))
 
 
 if __name__ == '__main__':
