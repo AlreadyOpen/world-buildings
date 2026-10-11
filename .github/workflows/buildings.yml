@@ -7,6 +7,10 @@ on:
         description: 'Probe: only these Overture files (e.g. 00058); empty = the whole world'
         type: string
         default: ''
+      regions:
+        description: 'Only these regions (e.g. nl), added to the release already published; empty = plan the whole world'
+        type: string
+        default: ''
       target:
         description: 'Buildings with a height per region job'
         type: string
@@ -37,7 +41,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - id: plan
-        run: echo "matrix=$(python buildings.py plan --target '${{ inputs.target }}' ${{ inputs.files && format('--files {0}', inputs.files) || '' }} | tail -1)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(python buildings.py plan --target '${{ inputs.target }}' ${{ inputs.files && format('--files {0}', inputs.files) || '' }} ${{ inputs.regions && format('--regions {0}', inputs.regions) || '' }} | tail -1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: plan
@@ -106,6 +110,7 @@ jobs:
       - if: inputs.publish && steps.done.outputs.skip != 'true'
         name: mirror to Kaggle
         continue-on-error: true
+        timeout-minutes: 90
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           KAGGLE_MESSAGE: world-buildings ${{ matrix.region }}

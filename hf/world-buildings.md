@@ -47,10 +47,15 @@ as published (`check` is empty).
   Attribution: Overture Maps Foundation; © OpenStreetMap contributors. The Overture regions are a derived database, so they
   are ODbL-1.0 too.
 - Region `hk`: Lands Department via the CSDI Portal, under the
-  [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC). Overture leaves Hong Kong out, so it is not counted
-  twice. The card's `license: odbl` covers the Overture regions; official regions are not relicensed.
-- The Netherlands: Overture for now. © 3DBAG by tudelft3d and 3DGI ([CC BY 4.0](https://docs.3dbag.nl/en/copyright/)) will
-  replace it once every 3DBAG building is wired in.
+  [CSDI Terms of Use](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC). Overture also carries some Hong Kong buildings (from
+  OpenStreetMap); they stay in the Overture regions, so those places appear in both. The card's `license: odbl` covers the
+  Overture regions; official regions are not relicensed.
+- Region `nl`: © 3DBAG by tudelft3d and 3DGI, [CC BY 4.0](https://docs.3dbag.nl/en/copyright/), every building 3DBAG
+  publishes, from its per-tile GeoPackages. Changed: every layer (`pand`, `lod12_2d`, `lod13_2d`, `lod22_2d`, `lod12_3d`,
+  `lod13_3d`, `lod22_3d`) and every field kept as `v/<release>/nl/<layer>-<batch>.parquet`, reprojected from RD New to WGS84
+  (z stays NAP metres), plus `tile_id` and `fid` (3DBAG's per-tile row key). The tiles draw the LoD1.2 roof parts with their
+  building's fields, height = `b3_h_70p - b3_h_maaiveld`. Overture's Netherlands buildings stay in the Overture regions, so the
+  Netherlands appears in both.
 - Height check only (not published): Wikidata (CC0). Coverage cut only (not published): GISCO country outlines,
   © EuroGeographics for the administrative boundaries.
 

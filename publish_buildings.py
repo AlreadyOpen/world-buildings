@@ -5,7 +5,7 @@
                 writes out/<id>.pub.json (counts, bbox, sha256) for finalize
   finalize      with every out/*.pub.json: gate (manifest.py), then index.json + manifest.json at the root of both, last.
                 /map reads index.json: {release, layer, regions: [{id, source, bbox, rows, tiles}]}.
-One region per source licence: Overture regions are ODbL, `hk` is CSDI terms; never merged."""
+One region per source licence: Overture regions are ODbL, `hk` is CSDI terms, `nl` (3DBAG) is CC BY 4.0; never merged."""
 import json, os, sys, urllib.error, urllib.request
 from pathlib import Path
 from huggingface_hub import HfApi, batch_bucket_files, create_bucket
@@ -30,7 +30,7 @@ def region(rid):
     api.upload_folder(folder_path=str(OUT / rid), path_in_repo=f'v/{rel}/{rid}', repo_id=REPO, repo_type='dataset',
                       allow_patterns='*.parquet', commit_message=f'{rid}: Overture {rel}')
     batch_bucket_files(REPO, add=[(str(tiles), f'v/{rel}/{rid}.pmtiles')])
-    pub = {'id': rid, 'source': 'hk' if rid == 'hk' else 'overture_part' if rid == 'parts' else 'overture',
+    pub = {'id': rid, 'source': meta.get('source') or ('hk' if rid == 'hk' else 'overture_part' if rid == 'parts' else 'overture'),
            'rows': meta.get('rows'), 'checked': meta.get('checked'), 'bbox': meta.get('bbox'),
            'tiles': f'{BUCKET}/v/{rel}/{rid}.pmtiles',
            'files': {k: {'sha256': manifest.sha256(p), 'bytes': p.stat().st_size} for k, p in files.items()}}
@@ -50,7 +50,7 @@ def done(rid):
 
 def finalize():
     rel = release()
-    ids = sorted(json.loads((OUT / 'plan.json').read_text())['regions']) + [cc for cc in os.environ.get('OFFICIAL', 'hk').split(',') if cc]
+    ids = sorted(json.loads((OUT / 'plan.json').read_text())['regions']) + [cc for cc in os.environ.get('OFFICIAL', 'hk,nl').split(',') if cc]
     regs, missing = [], []
     for rid in ids:                                                        # every region of the plan, from whichever run made it
         try:
