@@ -205,7 +205,9 @@ def bag(a):
     height = b3_h_70p - b3_h_maaiveld, as world-skylines' nl layer did."""
     d = OUT / 'nl'; tmp = DATA / 'bag-tmp'; d.mkdir(parents=True, exist_ok=True); tmp.mkdir(parents=True, exist_ok=True)
     con = db(); con.execute('INSTALL sqlite; LOAD sqlite')
-    tiles = con.execute(f"SELECT tile_id, gpkg_download, gpkg_sha256 FROM ST_Read('/vsicurl/{BAG_INDEX}') ORDER BY tile_id").fetchall()
+    idx = tmp / 'tile_index.fgb'                    # fetched by Python: GDAL's curl looks for a CA file the runner does not have
+    urllib.request.urlretrieve(BAG_INDEX, idx)
+    tiles = con.execute(f"SELECT tile_id, gpkg_download, gpkg_sha256 FROM ST_Read('{idx}') ORDER BY tile_id").fetchall()
     if os.environ.get('BAG_TILES'):                                       # a probe: just these tiles
         tiles = [t for t in tiles if t[0] in os.environ['BAG_TILES'].split(',')]
     version = tiles[0][1].split('/')[3]                                    # https://data.3dbag.nl/v20250903/tiles/...
